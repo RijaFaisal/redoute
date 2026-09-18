@@ -11,7 +11,11 @@ def render(findings, filename):
     lines = [f"\nredoute scanned {filename}", f"{len(findings)} finding(s):\n"]
     for i, f in enumerate(findings, 1):
         loc = f"line {f.line}" if f.line else "location n/a"
-        lines.append(f"{_BADGE[f.severity]} {i}. {f.title}  ({loc}, {f.cwe or 'no CWE'})")
+        meta = [loc, f.cwe or "no CWE"]
+        if f.test_id:
+            meta.append(f.test_id)
+        meta.append(f"source: {f.source}")
+        lines.append(f"{_BADGE[f.severity]} {i}. {f.title}  ({', '.join(meta)})")
         lines.append(f"    Threat vector: {f.threat_vector}")
         lines.append(f"    How it's exploited: {f.explanation}")
         lines.append(f"    Suggested fix: {f.suggested_fix}\n")

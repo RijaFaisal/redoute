@@ -3,6 +3,7 @@ import argparse, sys
 from pathlib import Path
 from .auditor import Auditor, SEVERITY_ORDER
 from .report import render
+from .static_scan import run_bandit
 
 
 def cmd_scan(args):
@@ -11,10 +12,14 @@ def cmd_scan(args):
         print(f"No such file: {path}", file=sys.stderr)
         return 2
     text = path.read_text(encoding="utf-8", errors="replace")
+    static_findings = run_bandit(str(path))
     auditor = Auditor()
-    print(f"Sending {path} to {auditor.model} at {auditor.endpoint} ...")
+    print(
+        f"Sending {path} to {auditor.model} at {auditor.endpoint} "
+        f"({len(static_findings)} static finding(s) to triage) ..."
+    )
     try:
-        findings = auditor.audit_text(text, str(path))
+        findings = auditor.audit(text, str(path), static_findings)
     except Exception as e:
         print(f"\nCould not complete the scan: {e}", file=sys.stderr)
         print("Is your model server running? Try: ollama serve", file=sys.stderr)
