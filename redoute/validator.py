@@ -9,6 +9,13 @@ from .static_scan import run_bandit
 EXPLOIT_TIMEOUT = 30
 TEST_TIMEOUT = 120
 
+# Gate C runs the project's own test suite, which (once tests/ exists) can
+# itself call validate_patch(). Without this guard that would spawn a
+# pytest subprocess whose tests spawn another pytest subprocess, forever.
+# It's set on the nested subprocess's environment only, so recursion is
+# cut off at one level deep rather than growing unbounded.
+_RECURSION_GUARD_ENV = "REDOUTE_VALIDATING"
+
 
 @dataclass
 class GateResult:
@@ -118,6 +125,9 @@ def _find_tests_dir(project_root: Path) -> Path | None:
 def run_tests_gate(project_root: Path, target_path: Path, patched_text: str) -> GateResult:
     """Gate C: if the project has a tests/ dir, run it against a staged
     copy of the project with the target file swapped for the patch."""
+    if os.environ.get(_RECURSION_GUARD_ENV):
+        return GateResult("tests", "skipped", "skipped to avoid recursive validation (already inside a Gate C run)")
+
     tests_dir = _find_tests_dir(project_root)
     if tests_dir is None:
         return GateResult("tests", "skipped", "no tests to run")
@@ -132,12 +142,13 @@ def run_tests_gate(project_root: Path, target_path: Path, patched_text: str) -> 
             tmp_root = Path(tmp) / "project"
             shutil.copytree(
                 project_root, tmp_root,
-                ignore=shutil.ignore_patterns(".git", ".venv", "__pycache__", "patches"),
+                ignore=shutil.ignore_patterns(".git", ".venv", "__pycache__", "patches", ".pytest_cache", "*.egg-info"),
             )
             (tmp_root / rel_target).write_text(patched_text, encoding="utf-8")
+            env = dict(os.environ, **{_RECURSION_GUARD_ENV: "1"})
             proc = subprocess.run(
                 [sys.executable, "-m", "pytest", "tests", "-q"],
-                cwd=tmp_root, capture_output=True, text=True, timeout=TEST_TIMEOUT,
+                cwd=tmp_root, capture_output=True, text=True, timeout=TEST_TIMEOUT, env=env,
             )
     except subprocess.TimeoutExpired:
         return GateResult("tests", "fail", "test suite timed out")

@@ -15,17 +15,23 @@ def cmd_scan(args):
         return 2
     text = path.read_text(encoding="utf-8", errors="replace")
     static_findings = run_bandit(str(path))
-    auditor = Auditor()
-    print(
-        f"Sending {path} to {auditor.model} at {auditor.endpoint} "
-        f"({len(static_findings)} static finding(s) to triage) ..."
-    )
-    try:
-        findings = auditor.audit(text, str(path), static_findings)
-    except Exception as e:
-        print(f"\nCould not complete the scan: {e}", file=sys.stderr)
-        print("Is your model server running? Try: ollama serve", file=sys.stderr)
-        return 2
+
+    if args.static_only:
+        print(f"Static-only scan of {path} (Bandit only, no LLM triage) ...")
+        findings = static_findings
+    else:
+        auditor = Auditor()
+        print(
+            f"Sending {path} to {auditor.model} at {auditor.endpoint} "
+            f"({len(static_findings)} static finding(s) to triage) ..."
+        )
+        try:
+            findings = auditor.audit(text, str(path), static_findings)
+        except Exception as e:
+            print(f"\nCould not complete the scan: {e}", file=sys.stderr)
+            print("Is your model server running? Try: ollama serve", file=sys.stderr)
+            return 2
+
     print(render(findings, str(path)))
     worst = max((SEVERITY_ORDER[f.severity] for f in findings), default=-1)
     return 1 if worst >= SEVERITY_ORDER["high"] else 0
@@ -142,6 +148,10 @@ def main(argv=None):
 
     scan = sub.add_parser("scan", help="Audit a single file")
     scan.add_argument("file", help="Path to the source file to scan")
+    scan.add_argument(
+        "--static-only", action="store_true",
+        help="Skip LLM triage; report Bandit findings only (used in CI, where no local model is available)",
+    )
     scan.set_defaults(fn=cmd_scan)
 
     patch = sub.add_parser("patch", help="Propose and validate fixes for high/critical findings")

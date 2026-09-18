@@ -1,0 +1,39 @@
+name: redoute scan
+
+# redoute's full pipeline (static scan + LLM triage) needs a local Ollama
+# model, which only exists on a developer's machine. CI has no LLM to talk
+# to, so this workflow runs `redoute scan --static-only`: Bandit's findings
+# only, no triage, no de-duplication, no patch proposals. It's a strictly
+# weaker check than the local `redoute scan`, by design — it fails the
+# build on any high/critical Bandit finding, and developers get the full
+# triaged report locally.
+
+on:
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run redoute scan (static-only)
+        run: |
+          set -o pipefail
+          python -m redoute.cli scan --static-only examples/vulnerable.py | tee redoute-report.txt
+
+      - name: Upload scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: redoute-report
+          path: redoute-report.txt
